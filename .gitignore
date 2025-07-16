@@ -1,0 +1,18 @@
+# Ignore environment secrets
+config/.env
+
+# Ignore all data artifacts generated or imported during migration
+data/
+
+# Virtual environment
+.venv/
+
+# Logs and temps
+logs/*
+*.log
+*.tmp
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
