@@ -53,13 +53,8 @@ For step-by-step execution, follow the phases in [docs/mapmyrun-to-strava-migrat
 **Warning**: Respect API rate limits. Backup data before running. This is for personal use; adapt for your needs.
 
 ## Configuration
-- Edit `config/.env` with:
-  ```
-  MAPMYRUN_USERNAME=your_username
-  MAPMYRUN_PASSWORD=your_password
-  STRAVA_CLIENT_ID=your_id
-  STRAVA_CLIENT_SECRET=your_secret
-  ```
+- Edit `config/.env` with your Strava API credentials.
+- **For MapMyRun authentication**, this project uses a session cookie to bypass the complex login process. Follow the detailed guide at [docs/how-to-download-tcx.md](docs/how-to-download-tcx.md) to get the required cookie string and add it to your `.env` file.
 - Adjust paths in scripts as needed.
 
 ## Contributing

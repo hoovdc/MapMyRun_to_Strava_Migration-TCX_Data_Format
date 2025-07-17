@@ -8,9 +8,11 @@ data/
 .venv/
 
 # Logs and temps
-logs/*
+logs/
 *.log
 *.tmp
+cookies.pkl
+chrome_data/
 
 # Python caches
 __pycache__/

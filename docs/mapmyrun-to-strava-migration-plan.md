@@ -9,52 +9,70 @@ This development plan outlines a phased approach to migrate fitness data from Ma
 - I plan to do this only once. In other words, I don't plan to do additional bulk transfers of this data in the future. I'll just use Strava to capture the data in the future.
 - I don't want to use the MapMyRun API right now because I believe it would require a delay in my project for human approval of the granting of my API key.
 - I am the only user of this project.
+- **Strategy Pivot**: The initial plan to use Selenium for UI automation proved too brittle and unreliable due to anti-bot measures on MapMyRun's website. The project has pivoted to a more robust strategy using direct `requests` calls authenticated via a manually extracted session cookie. This bypasses the UI entirely.
 
 ## Phase 0: Prerequisites & Setup (2-3 hours)
 
 ### Objectives
 - Set up development environment
-- Obtain necessary credentials
+- Obtain necessary credentials and authentication tokens
 - Validate access to both platforms
+
+Note: The initial attempt to use public visibility for unauthenticated downloads failed. The subsequent attempt to use Selenium for authenticated downloads also failed due to website complexity. The plan is now updated to use a robust, cookie-based authentication method.
 
 ### Tasks
 1. **Development Environment Setup**
-   - [ ] Install Python 3.8+ 
-   - [ ] Create virtual environment: `python -m venv .venv`
-   - [ ] Install required packages:
+   - [x] Install Python 3.8+ 
+   - [x] Create virtual environment: `python -m venv .venv`
+   - [x] Install required packages:
      ```bash
-     pip install pandas requests selenium webdriver-manager stravalib python-dotenv beautifulsoup4
+     pip install pandas requests stravalib python-dotenv beautifulsoup4 tcxreader
      ```
-   - [ ] Install Chrome browser (if not present)
-   - [ ] Install ChromeDriver or use webdriver-manager
+   - [x] Install Chrome browser (if not present, for manual cookie extraction)
 
 2. **Credential Preparation**
-   - [ ] MapMyRun credentials (username/password)
-   - [ ] Create Strava API application at https://www.strava.com/settings/api
-   - [ ] Note Client ID, Client Secret from Strava
-   - [ ] Set Authorization Callback Domain to `localhost`
-   - [ ] Create config/.env file (use .env.example if available)
-   - [ ] Populate .env with real credential values (e.g., MAPMYRUN_USERNAME, STRAVA_CLIENT_ID)
+   - [x] MapMyRun Credentials: Instead of username/password, use a session cookie.
+     - [x] Follow the guide at [docs/how-to-download-tcx.md](docs/how-to-download-tcx.md) to get the required cookie string.
+   - [x] Create Strava API application at https://www.strava.com/settings/api
+   - [x] Note Client ID, Client Secret from Strava
+   - [x] Set Authorization Callback Domain to `localhost`
+   - [x] Create `config/.env` file
+   - [x] Populate `.env` with credential values:
+     ```
+     # In config/.env
+     MAPMYRUN_COOKIE_STRING='paste_your_full_cookie_string_here'
+     STRAVA_CLIENT_ID=your_id
+     STRAVA_CLIENT_SECRET=your_secret
+     ```
+
+   Note: This cookie-based method is far more reliable than UI automation and does not require making workouts public.
 
 3. **Data Export from MapMyRun**
-   - [ ] Log into MapMyRun web interface
-   - [ ] Export workout history CSV from https://www.mapmyfitness.com/workout/export/csv
-   - [ ] Save as `data/From_MapMyRun/CSV_for_event_ID_extraction/mapmyrun_export.csv` in project directory
-   - [ ] Verify CSV contains workout IDs in Link column
-   - [ ] Temporarily make all workouts public in MapMyRun settings to simplify downloads
+   - [x] Log into MapMyRun web interface
+   - [x] Export workout history CSV from https://www.mapmyfitness.com/workout/export/csv
+   - [x] Save as `data/From_MapMyRun/CSV_for_event_ID_extraction/mapmyrun_export.csv` in project directory
+   - [x] Verify CSV contains workout IDs in Link column
+
+   Note: Making workouts public is no longer a necessary step with the cookie-based authentication approach.
 
 4. **Create Project Structure**
    ```
    mmr-to-strava/
    ├── src/
    │   ├── __init__.py
-   │   ├── mmr_exporter.py
+   │   ├── mmr_downloader.py        # New: Replaces Selenium/Simple downloaders
    │   ├── strava_uploader.py
-   │   └── utils.py
+   │   ├── csv_parser.py
+   │   └── tcx_validator.py
+   ├── utils/
+   │   ├── __init__.py
+   │   └── logger.py
    ├── data/
    │   ├── From_MapMyRun/
    │   │   ├── CSV_for_event_ID_extraction/
    │   │   └── TCX_downloads/
+   │   ├── Processed/
+   │   │   └── TCX_repaired/
    │   └── To_Strava/
    ├── tests/
    ├── logs/
@@ -65,11 +83,14 @@ This development plan outlines a phased approach to migrate fitness data from Ma
    └── main.py
    ```
 
+   Note: Project structure is complete, including `utils/logger.py` for central logging. The `selenium_downloader.py` has been removed in favor of `mmr_downloader.py`.
+
 ### Deliverables
 - Working Python environment
-- Valid credentials for both platforms
+- Valid credentials and tokens for both platforms
 - MapMyRun workout history CSV file
-- Basic project structure
+- Updated project structure
+- Validated access via a successful test download using the new cookie-based method.
 
 ## Phase 1: CSV Analysis & Workout Inventory (2-3 hours)
 
@@ -118,114 +139,59 @@ This development plan outlines a phased approach to migrate fitness data from Ma
 - Download queue JSON file
 - Data quality assessment
 
-## Phase 2: Simple TCX Downloader (Public Workouts) (3-4 hours)
+## Phase 2: Authenticated TCX Downloader (`requests`) (3-4 hours)
 
 ### Objectives
-- Implement basic TCX download functionality
-- Test with public workouts
-- Handle errors gracefully
+- [x] Implement robust TCX download functionality using direct `requests` calls authenticated with a session cookie.
+- [x] Handle errors, rate limiting, and progress tracking gracefully.
 
 ### Tasks
-1. **Create Basic Downloader** (`src/simple_downloader.py`)
-   ```python
-   class SimpleDownloader:
-       def __init__(self, output_dir='data/From_MapMyRun/TCX_downloads'):
-           self.output_dir = Path(output_dir)
-           self.session = requests.Session()
-           
-       def download_tcx(self, workout_id):
-           # Download single TCX file
-           
-       def batch_download(self, workout_ids, delay=2):
-           # Download multiple with rate limiting
-   ```
+1. **Create Authenticated Downloader** (`src/mmr_downloader.py`)
+   - [x] Create downloader class using `requests`.
+   - [x] Implement `download_tcx` for single file downloads.
+   - [x] Implement `batch_download` for multiple files.
 
 2. **Implement Features**
-   - [ ] Progress tracking
-   - [ ] Resume capability using SQLite flags (skip workouts where `downloaded_flag` is true)
-   - [ ] Error logging
-   - [ ] Rate limiting (2-3 second delays)
-   - [ ] Retry logic for failed downloads
+   - [x] Progress tracking (using `tqdm`).
+   - [x] Resume capability (skips already downloaded files).
+   - [x] Error logging to the central logger.
+   - [x] Rate limiting (2-3 second delays between requests).
+   - [x] Retry logic for transient network errors.
 
 ### Testing
-   - [ ] Test with 5-10 public workouts
-   - [ ] Trial the first ~50 records before proceeding with full downloads to validate the process
-   - [ ] Verify TCX file validity and ensure `downloaded_flag` updates correctly in SQLite
-   - [ ] Check error handling
+   - [x] Test with 5-10 workout IDs to verify the authentication and download process.
+   - [x] Trial the first ~50 records before proceeding with full downloads to validate the process at scale.
+   - [x] Verify TCX file validity and ensure `downloaded_flag` updates correctly in SQLite.
+   - [x] Check error handling for invalid workout IDs or auth failures.
 
 ### Deliverables
-- Working simple downloader
-- Downloaded TCX files (public workouts)
-- Updated SQLite DB with download statuses
-- Error log for failed downloads
+- [x] A robust, working `requests`-based downloader.
+- [ ] All TCX files for the workouts downloaded successfully.
+- [ ] Updated SQLite DB with download statuses.
+- [x] An error log for any failed downloads.
 
-## Phase 3: Authenticated Downloader (Private Workouts) (4-5 hours)
+## Phase 3: (Removed)
 
-### Objectives
-- Implement Selenium-based authenticated download
-- Handle MapMyRun login process
-- Download private workouts
-
-### Tasks
-1. **Create Selenium Downloader** (`src/selenium_downloader.py`)
-   ```python
-   class AuthenticatedDownloader:
-       def __init__(self, username, password):
-           self.username = username
-           self.password = password
-           self.driver = None
-           
-       def login(self):
-           # Handle MapMyRun authentication
-           
-       def download_with_auth(self, workout_ids):
-           # Download private workouts
-   ```
-
-   Note: Since workouts will be made public for the duration of migration, this phase can be skipped by using the simple downloader from Phase 2 instead of authenticated Selenium-based downloads.
-
-2. **Implement Robust Login**
-   - [ ] Handle CAPTCHA (manual intervention if needed)
-   - [ ] Cookie persistence
-   - [ ] Session validation
-   - [ ] Auto-retry on timeout
-
-3. **Advanced Features**
-   - [ ] Headless browser option
-   - [ ] Download progress monitoring
-   - [ ] Parallel download capability (optional if it easily improves speed without introducing difficult bugs)
-   - [ ] Smart wait conditions
-
-### Deliverables
-- Authenticated downloader module
-- All TCX files downloaded
-- Comprehensive download report
+This phase, previously for Selenium-based authenticated downloads, is now obsolete. The functionality has been merged into the new **Phase 2** using a more reliable cookie-based `requests` implementation.
 
 ## Phase 4: Data Validation & Preprocessing (3-4 hours)
 
 ### Objectives
-- Validate downloaded TCX files
-- Fix common issues
-- Prepare for Strava upload
+- [x] Validate downloaded TCX files
+- [ ] Fix common issues
+- [ ] Prepare for Strava upload
 
 ### Tasks
 1. **Create TCX Validator** (`src/tcx_validator.py`)
-   ```python
-   class TCXValidator:
-       def validate_tcx(self, file_path):
-           # Use tcxreader library to check XML structure, verify required fields including GPS and heart rate data, and ensure data integrity
-           
-       def repair_tcx(self, file_path):
-           # Fix common issues
-           # Add missing metadata
-   ```
-
+   - [x] Implement `validate` method using `tcxreader`.
+   - [ ] `repair_tcx` method (for later).
+   
 2. **Validation Checks**
-   - [ ] Valid XML structure
-   - [ ] Presence of GPS data
-   - [ ] Time series continuity
-   - [ ] Heart rate data (if expected)
-   - [ ] Activity type mapping
+   - [x] Valid XML structure.
+   - [x] Presence of GPS data.
+   - [x] Time series continuity.
+   - [x] Heart rate data (if expected).
+   - [x] Activity type mapping.
 
 3. **Create Upload Manifest**
    - [ ] Map TCX files to original workout data
@@ -330,9 +296,17 @@ This development plan outlines a phased approach to migrate fitness data from Ma
    class MapMyRunToStrava:
        def __init__(self, config_path):
            self.config = load_config(config_path)
+           # self.inventory = WorkoutInventory(...)
+           # self.downloader = MmrDownloader(...)
+           # self.uploader = StravaUploader(...)
            
        def run_migration(self):
-           # Execute full pipeline
+           # Execute full pipeline:
+           # 1. Analyze CSV
+           # 2. Download TCX files
+           # 3. Validate files
+           # 4. Authenticate with Strava
+           # 5. Upload to Strava
    ```
 
 2. **CLI Interface**
@@ -370,7 +344,6 @@ This development plan outlines a phased approach to migrate fitness data from Ma
    - [ ] Large dataset testing
 
 3. **Performance Optimization**
-   - [ ] Parallel downloads (with rate limiting)
    - [ ] Batch processing optimization
    - [ ] Memory usage profiling
 
@@ -399,7 +372,7 @@ This development plan outlines a phased approach to migrate fitness data from Ma
    - [ ] Setup.py for installation
 
 3. **User Guides**
-   - [ ] Step-by-step migration guide
+   - [ ] Step-by-step migration guide, including how to get the auth token.
    - [ ] Video tutorial (optional)
    - [ ] FAQ section
 
@@ -425,7 +398,7 @@ This development plan outlines a phased approach to migrate fitness data from Ma
    - [ ] Archive TCX files
    - [ ] Clean up temporary files
    - [ ] Document any issues
-   - [ ] Revert MapMyRun workouts to private settings
+   - [ ] Revert MapMyRun workouts to private settings (if they were ever made public)
 
 3. **Future Enhancements**
    - [ ] Auto-sync new activities
@@ -441,24 +414,20 @@ This development plan outlines a phased approach to migrate fitness data from Ma
 
 ### Potential Risks & Solutions
 
-1. **MapMyRun Changes Website Structure**
-   - Solution: Use multiple selectors, implement fallbacks
-   - Monitor for changes, update quickly
+1. **MapMyRun Changes Website Structure or API**
+   - **Risk**: The TCX export URL format (`/workout/export/{id}/tcx`) could change.
+   - **Solution**: This is a low risk for a one-time migration. If it changes, the `base_url` in `MmrDownloader` can be easily updated. The core authentication method is more stable than UI elements.
 
 2. **Rate Limiting/IP Blocking**
-   - Solution: Implement exponential backoff
-   - Use rotating user agents
-   - Respect rate limits
+   - **Solution**: The plan already includes conservative rate limiting (2-3 second delays). We can implement exponential backoff if 429 "Too Many Requests" errors occur. Rotating user agents is also a good practice.
 
-3. **Large Dataset Issues**
-   - Solution: Implement chunking
-   - Progress persistence via SQLite database (resume-safe)
-   - Memory-efficient processing
+3. **Session Cookie Invalidation**
+   - **Risk**: The `auth_token` cookie might expire during a long-running download process.
+   - **Solution**: For a one-time migration of ~600 workouts, this is unlikely to be an issue if the script runs quickly. If it fails, the solution is simple: manually grab a new cookie and restart the script. The resume-safe design (using SQLite) ensures no work is lost.
 
 4. **Authentication Failures**
-   - Solution: Token refresh logic
-   - Manual intervention options
-   - Clear error messages
+   - **Risk**: The cookie is invalid or expired from the start.
+   - **Solution**: The script should perform a test lookup on a known valid workout ID on startup. If it fails, it should exit immediately with a clear error message prompting the user to update their `MAPMYRUN_AUTH_TOKEN` in the `.env` file.
 
 5. **Data Loss**
    - Solution: Always keep originals
@@ -471,19 +440,20 @@ This development plan outlines a phased approach to migrate fitness data from Ma
 - ✓ No data loss or corruption
 - ✓ Execution time under 2 hours for 1000 workouts
 - ✓ Less than 1% failure rate
-- ✓ User can run with minimal technical knowledge
+- ✓ User can run with minimal technical knowledge (after the one-time cookie setup)
 
 ## Timeline Summary
 
 - **Total Estimated Time**: 30-40 hours
 - **Elapsed Time**: 2-3 weeks (working evenings/weekends)
-- **Critical Path**: Phases 0-3 must be sequential
-- **Parallel Work**: Phases 4-6 can overlap
+- **Critical Path**: The new critical path is now Phases 0, 1, 2, 4, 5, 6.
+- **Parallel Work**: Phases can be worked on sequentially as the plan is now much more linear and simplified.
 
 ## Next Steps
 
 1. Set up development environment (Phase 0)
-2. Export MapMyRun data
-3. Begin with Phase 1 CSV analysis
-4. Iterate through phases, testing continuously
-5. Document issues and solutions as you progress
+2. Export MapMyRun data and extract auth cookie
+3. Implement Phase 1: CSV Analysis & Workout Inventory.
+4. Run the full batch download to acquire all ~600 TCX files.
+5. Proceed with the remaining tasks in Phase 4 (Data Validation & Preprocessing).
+6. Continue through the remaining phases of the project.
