@@ -1,6 +1,9 @@
 # Ignore environment secrets
 config/.env
 
+# Strava token cache
+config/strava_token.json
+
 # Ignore all data artifacts generated or imported during migration
 data/
 

@@ -84,3 +84,34 @@ All attempts focused on src/selenium_downloader.py unless noted. Iterations buil
 - If fails, extract cookies manually from browser dev tools and load into requests.session for non-Selenium downloads.
 - Fallback: Manual TCX exports in batches from MapMyRun web, then proceed to Phase 4 (validation) and Strava upload.
 - Update plan to move authenticated downloader to Phase 2 as primary method.
+
+
+## Phase 1: Database Schema Repair Failures
+
+### Challenge: Persistent `OperationalError` during Database Repair
+
+*   **Description**: After implementing the database-driven workflow, a one-time utility script (`utils/repair_database.py`) was created to update the existing database schema. The goal was to rename the old `Status` column to `mmr_status` and add a new `strava_status` column. However, every attempt to run this script failed with the same error: `sqlite3.OperationalError: no such column: workouts.mmr_status`.
+*   **Impact**: The database schema could not be updated, blocking all subsequent data repair and validation steps. The script repeatedly crashed before it could populate missing `download_path` links or re-validate existing TCX files.
+*   **Root Cause**: A fundamental conflict between SQLAlchemy's Object-Relational Mapper (ORM) and the physical database file. The application's `Workout` model (in `src/database_manager.py`) defines the schema in Python code, explicitly expecting a column named `mmr_status`. The moment the repair script imported this model, SQLAlchemy's metadata registry was primed with this expectation. This "poisoned" the context, causing all checks against the actual database (which still had the old `Status` column) to fail in confusing ways. The script was unable to see the reality of the on-disk schema because the ORM's view of the world took precedence.
+
+### Attempted Solutions and Failures
+
+1.  **Session Refresh**:
+    *   **Solution**: The initial theory was that the SQLAlchemy session had a stale view of the schema. The fix involved closing the session after the migration and creating a new one for the data repair step.
+    *   **Failure**: Failed with the same `OperationalError`. The problem occurred because the schema migration step itself was being skipped incorrectly, so refreshing the session afterwards had no effect.
+
+2.  **Low-Level Schema Inspection (`PRAGMA`)**:
+    *   **Solution**: The next theory was that SQLAlchemy's `inspector` was providing cached information. The fix was to use a direct SQL `PRAGMA table_info()` query to get the "true" column list from the database, bypassing the inspector.
+    *   **Failure**: Failed with the same error. This revealed that the core issue was the ORM context being established at the moment of import, not at run time, making even direct queries unreliable within that context.
+
+3.  **Conditional Metadata Creation**:
+    *   **Solution**: To prevent the ORM from establishing its context, a `skip_metadata_creation` flag was added to the `DatabaseManager`. The repair script used this flag to try and get a "clean" connection.
+    *   **Failure**: Failed with the same error. This confirmed the root cause: simply importing the `Workout` model anywhere in the script's execution path was enough to create the schema conflict, regardless of how the `DatabaseManager` was initialized.
+
+### Next Steps (The Definitive Fix)
+
+*   **Step 1: Create a Pure SQL Migration Script**: A new, temporary utility script (`utils/direct_sql_migrate.py`) will be created.
+    *   This script will use Python's standard `sqlite3` library, not SQLAlchemy.
+    *   It will **not import any project modules** (`DatabaseManager`, `Workout`, etc.) to avoid the ORM conflict.
+    *   It will perform the `ALTER TABLE` operations directly and reliably.
+*   **Step 2: Run the Main Repair Script**: After the schema is corrected by the pure SQL script, the existing `utils/repair_database.py` will be run. Freed from the schema migration task, it will now successfully execute its intended purpose: populating download links and re-validating TCX files.

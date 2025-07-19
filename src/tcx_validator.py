@@ -1,6 +1,6 @@
 import logging
 from xml.etree.ElementTree import ParseError
-from tcxreader.tcxreader import TCXReader
+from tcxreader.tcxreader import TCXReader, TCXTrackPoint
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,12 @@ class TcxValidator:
         try:
             tcx = TCXReader().read(str(file_path))
 
-            if not tcx.trackpoints:
-                logger.error(f"Validation FAILED for {file_path}: File is valid XML but contains no trackpoints.")
+            # A workout is valid if it has a duration OR trackpoints. This handles indoor activities.
+            has_duration = tcx.duration is not None and tcx.duration > 0
+            has_trackpoints = tcx.trackpoints and len(tcx.trackpoints) > 0
+
+            if not has_duration and not has_trackpoints:
+                logger.error(f"Validation FAILED for {file_path}: File has no duration or trackpoints.")
                 return False
 
             # High-level success message for console
@@ -45,22 +49,26 @@ class TcxValidator:
             logger.debug(f"  Total Duration: {round(tcx.duration or 0, 2)} seconds")
             logger.debug(f"  Average Heart Rate: {tcx.hr_avg}")
 
+            if not tcx.trackpoints:
+                logger.warning(f"  Workout has no trackpoints (e.g., manual entry). Duration: {tcx.duration}s")
+
             total_points = len(tcx.trackpoints)
-            points_with_gps = sum(1 for tp in tcx.trackpoints if tp.latitude is not None and tp.longitude is not None)
-            points_with_hr = sum(1 for tp in tcx.trackpoints if tp.hr_value is not None)
+            if total_points > 0:
+                points_with_gps = sum(1 for tp in tcx.trackpoints if tp.latitude is not None and tp.longitude is not None)
+                points_with_hr = sum(1 for tp in tcx.trackpoints if tp.hr_value is not None)
 
-            logger.debug(f"  Trackpoints Found: {total_points}")
-            logger.debug(f"  Trackpoints with GPS: {points_with_gps} ({round(points_with_gps/total_points * 100, 1)}%)")
-            logger.debug(f"  Trackpoints with Heart Rate: {points_with_hr} ({round(points_with_hr/total_points * 100, 1)}%)")
+                logger.debug(f"  Trackpoints Found: {total_points}")
+                logger.debug(f"  Trackpoints with GPS: {points_with_gps} ({round(points_with_gps/total_points * 100, 1)}%)")
+                logger.debug(f"  Trackpoints with Heart Rate: {points_with_hr} ({round(points_with_hr/total_points * 100, 1)}%)")
+                
+                if points_with_gps == 0:
+                    logger.warning(f"  This appears to be an indoor activity (no GPS data).")
             
-            if points_with_gps == 0 and total_points > 0:
-                logger.warning("  This appears to be an indoor activity (no GPS data).")
-
             logger.debug(f"--- End of Report for {file_path} ---")
 
             return True
 
-        except ParseError as e:
+        except (ParseError) as e:
             logger.error(f"Validation FAILED for {file_path}: Malformed XML/TCX file. Details: {e}")
             return False
         except Exception as e:

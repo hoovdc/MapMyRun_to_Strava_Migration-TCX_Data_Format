@@ -10,6 +10,8 @@ class WorkoutInventory:
         self.csv_path = csv_path
         try:
             self.df = pd.read_csv(self.csv_path)
+            # Sanitize column names by stripping whitespace
+            self.df.columns = self.df.columns.str.strip()
             logger.info(f"Successfully loaded {len(self.df)} workouts from {self.csv_path}")
         except FileNotFoundError:
             logger.error(f"CSV file not found at {self.csv_path}")
@@ -32,6 +34,8 @@ class WorkoutInventory:
                 if workout_id:
                     workouts.append({
                         'workout_id': workout_id,
+                        'activity_name': row.get('Activity Name'),
+                        'notes': row.get('Notes'),
                         'activity_type': row.get('Activity Type'),
                         'workout_date': self._parse_date(row.get('Workout Date'))
                     })
