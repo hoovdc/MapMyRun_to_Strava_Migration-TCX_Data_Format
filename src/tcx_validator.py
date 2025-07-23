@@ -1,6 +1,8 @@
 import logging
+import re
 from xml.etree.ElementTree import ParseError
 from tcxreader.tcxreader import TCXReader, TCXTrackPoint
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +13,7 @@ class TcxValidator:
     def validate(self, file_path: str) -> bool:
         """
         Validates a TCX file by attempting to parse it and checking for essential and detailed data.
+        Includes a fallback to manually check for duration if the tcxreader library fails.
 
         Args:
             file_path: The path to the TCX file.
@@ -18,22 +21,36 @@ class TcxValidator:
         Returns:
             True if the file is a valid and non-empty TCX file, False otherwise.
         """
+        file_name = os.path.basename(file_path)
         try:
             tcx = TCXReader().read(str(file_path))
 
-            # A workout is valid if it has a duration OR trackpoints. This handles indoor activities.
-            has_duration = tcx.duration is not None and tcx.duration > 0
-            has_trackpoints = tcx.trackpoints and len(tcx.trackpoints) > 0
+            # A workout is valid if it has a duration. It doesn't need GPS.
+            if tcx.duration is None or tcx.duration <= 0:
+                # Fallback: tcxreader can fail on some files. Manually check for TotalTimeSeconds.
+                logger.warning(f"tcxreader found no duration for {file_name}. Attempting manual fallback.")
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    match = re.search(r'<TotalTimeSeconds>(\d+\.?\d*)</TotalTimeSeconds>', content)
+                    if match:
+                        duration = float(match.group(1))
+                        if duration > 0:
+                            logger.info(f"Fallback SUCCESS: Found duration of {duration}s in {file_name} via manual check.")
+                            return True
+                except Exception as e:
+                    logger.error(f"Fallback FAILED for {file_name} during manual read: {e}")
+                    return False
 
-            if not has_duration and not has_trackpoints:
-                logger.error(f"Validation FAILED for {file_path}: File has no duration or trackpoints.")
+                logger.error(f"Validation FAILED for {file_name}: File has no duration or trackpoints, even after fallback.")
                 return False
 
             # High-level success message for console
-            logger.info(f"Validation SUCCESS for {file_path}")
+            logger.info(f"Validation SUCCESS for {file_name}")
 
             # Detailed data logging for the log file
-            logger.debug(f"--- Detailed Validation Report for {file_path} ---")
+            logger.debug(f"--- Detailed Validation Report for {file_name} ---")
             
             if tcx.activity_type:
                 logger.debug(f"  Activity Type: {tcx.activity_type}")
@@ -64,13 +81,13 @@ class TcxValidator:
                 if points_with_gps == 0:
                     logger.warning(f"  This appears to be an indoor activity (no GPS data).")
             
-            logger.debug(f"--- End of Report for {file_path} ---")
+            logger.debug(f"--- End of Report for {file_name} ---")
 
             return True
 
         except (ParseError) as e:
-            logger.error(f"Validation FAILED for {file_path}: Malformed XML/TCX file. Details: {e}")
+            logger.error(f"Validation FAILED for {file_name}: Malformed XML/TCX file. Details: {e}")
             return False
         except Exception as e:
-            logger.error(f"An unexpected error occurred during TCX validation of {file_path}: {e}")
+            logger.error(f"An unexpected error occurred during TCX validation of {file_name}: {e}")
             return False 

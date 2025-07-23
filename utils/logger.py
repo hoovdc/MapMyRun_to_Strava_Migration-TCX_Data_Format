@@ -1,9 +1,23 @@
 import logging
 import os
+import warnings
 from datetime import datetime
 
 def setup_logger(level=logging.DEBUG):
     """Setup the root logger with a timed file handler."""
+    # --- Custom Warning Handling ---
+    # 1. Filter out the specific, noisy DeprecationWarning from stravalib/units.
+    warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*You are using a Quantity object.*")
+
+    # 2. Route all other warnings through the logging system.
+    logging.captureWarnings(True)
+    
+    # 3. Define a custom format that avoids duplicating the "WARNING" prefix.
+    def custom_format_warning(message, category, filename, lineno, line=None):
+        return f"{category.__name__}: {message}"
+    
+    warnings.formatwarning = custom_format_warning
+
     # Create timestamp-based directories
     now = datetime.now()
     year_month = now.strftime('%Y-%m')
@@ -34,5 +48,8 @@ def setup_logger(level=logging.DEBUG):
     console_formatter = logging.Formatter('%(levelname)s: %(message)s')
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
+
+    # Suppress noisy INFO logs from the stravalib library during polling
+    logging.getLogger("stravalib").setLevel(logging.WARNING)
 
     return logger 

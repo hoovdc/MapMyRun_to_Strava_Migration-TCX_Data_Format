@@ -51,11 +51,16 @@ Note: The initial attempt to use public visibility for unauthenticated downloads
    - [x] Log into MapMyRun web interface
    - [x] Export workout history CSV from https://www.mapmyfitness.com/workout/export/csv
    - [x] Save as `data/From_MapMyRun/CSV_for_event_ID_extraction/mapmyrun_export.csv` in project directory
+   - [x] The path to this CSV can be overridden with the `--csv-path` command-line argument.
    - [x] Verify CSV contains workout IDs in Link column
 
    Note: Making workouts public is no longer a necessary step with the cookie-based authentication approach.
 
-4. **Create Project Structure**
+4. **Create Project Structure & Data Paths**
+   - [x] The project follows a defined structure.
+   - [x] **Primary Database**: `data/progress_tracking_data/migration_progress.db`
+   - [x] **TCX Downloads**: `data/From_MapMyRun/TCX_downloads/`
+   - [x] Internal logic has been standardized to use consistent path generation from a central configuration.
    ```
    mmr-to-strava/
    ├── src/
@@ -130,7 +135,7 @@ Note: The initial attempt to use public visibility for unauthenticated downloads
    - [x] Include metadata (date, activity type)
 
 4. **Persist Inventory to SQLite**
-   - [x] Create SQLite database at `data/migration_progress.db` using SQLAlchemy
+   - [x] Create SQLite database at `data/progress_tracking_data/migration_progress.db` using SQLAlchemy
    - [x] Store workouts table (id, date, activity_type, download_path, mmr_status, strava_status)
    - [x] Use this DB for resume capability and deduplication across phases
 
@@ -248,8 +253,8 @@ This phase, previously for Selenium-based authenticated downloads, is now obsole
 2. **Upload Features**
    - [x] Batch processing with user-configurable batch sizes.
    - [x] User confirmation prompt with single-file test option.
-   - [x] Robust duplicate prevention by handling Strava's `409 Conflict` API response.
-   - [x] Rate limit handling via delays between batches.
+   - [x] **Advanced Duplicate Handling**: Implemented both proactive and reactive duplicate detection. The script first queries Strava for activities with similar metrics on the same day to prevent an upload attempt. It also correctly handles `409 Conflict` API responses from Strava if a duplicate is found post-upload.
+   - [x] **Intelligent Rate Limit Handling**: The uploader now includes a robust backoff-and-retry mechanism. Upon receiving a `429 Too Many Requests` error, it will automatically pause for 15 minutes and then resume the operation, ensuring large batches can complete without interruption.
    - [x] Upload progress tracking with SQLite (`strava_status` updates).
    - [x] Error recovery for individual upload failures.
 
@@ -291,13 +296,13 @@ This phase, previously for Selenium-based authenticated downloads, is now obsole
    ```
 
 2. **CLI Interface**
-   - [ ] Command-line arguments
-   - [ ] Interactive mode
-   - [ ] Progress bars
-   - [ ] Status updates
+   - [x] Implemented a `--dry-run` command-line argument to simulate the entire migration pipeline without making any actual API calls to Strava. This is a critical pre-flight check.
+   - [x] Added a `--csv-path` argument to allow specifying a custom location for the MapMyRun data export.
+   - [x] Progress bars for all long-running operations.
+   - [x] Status updates logged clearly to the console.
 
 3. **Configuration Management**
-   - [ ] Environment variables (.env) - load using python-dotenv in scripts
+   - [x] Environment variables (.env) loaded using python-dotenv.
    - [ ] Config file support
    - [ ] Command-line overrides
 
@@ -309,93 +314,76 @@ This phase, previously for Selenium-based authenticated downloads, is now obsole
 ## Phase 8: Testing & Error Handling (3-4 hours)
 
 ### Objectives
-- Comprehensive testing (start with essential unit tests only, add more if needed)
+- Comprehensive testing
 - Robust error handling
-- Performance optimization
+- Final verification of the migration
 
 ### Tasks
-1. **Architectural Robustness**
-   - [x] Implemented an automatic database schema migration system in `DatabaseManager`.
-   - [x] The system versions the schema and automatically rebuilds the database from the source CSV if the code model is updated.
-   - [x] This process eliminates manual database deletion and makes the application resilient to future development changes.
-   - [x] Obsoleted and removed manual database repair scripts.
+1. **Architectural Robustness & Data Integrity**
+   - **Database Schema Warning**: The project uses a fixed database schema defined by the `Workout` model. The application does not support automatic schema migrations. If the model is modified, the `data/progress_tracking_data/migration_progress.db` file **must be deleted** and rebuilt from the source CSV on the next run.
+   - **Data Repair Utilities**: The scripts in the `utils/` directory are preserved for one-off data correction tasks (e.g., populating missing paths or re-validating files) and do not handle schema changes.
 
-2. **Unit Tests**
-   - [ ] Test each module independently
-   - [ ] Mock external services
-   - [ ] Edge case handling
+2. **Integration & Verification Testing**
+   - [x] After implementing `--dry-run`, an end-to-end test has been performed, verifying the logs show the correct intended actions.
+   - [x] After implementing improved duplicate handling, tests on known duplicates have confirmed they are correctly marked `skipped_already_exists`.
+   - [x] A small batch has been verified end-to-end, checking Strava for data integrity (GPS, HR, timestamps) after the live upload.
 
-3. **Integration Tests**
-   - [ ] End-to-end workflow test
-   - [ ] Error recovery scenarios
-   - [ ] Large dataset testing
-
-4. **Performance Optimization**
-   - [ ] Batch processing optimization
-   - [ ] Memory usage profiling
+3. **Performance Optimization**
+   - [ ] Memory usage profiling during a large batch run (if needed).
 
 ### Deliverables
-- Test suite
+- Test suite results
 - Performance report
 - Bug fixes
 
-## Phase 9: Documentation & Deployment (2-3 hours)
+## Phase 9: Documentation & Deployment (1-2 hours)
 
 ### Objectives
-- Create comprehensive documentation
-- Package for easy deployment
-- Create user guides
+- Create final, accurate documentation
+- Prepare for final execution
 
 ### Tasks
-1. **Documentation**
-   - [ ] README.md with quick start
-   - [ ] Detailed user guide
-   - [ ] API documentation
-   - [ ] Troubleshooting guide
+1. **Final Documentation Review**
+   - [ ] Finalize `README.md` and this development plan after all code changes are complete. Ensure all descriptions are accurate and all checkboxes reflect the project's final state.
+   - [ ] Add a brief "Troubleshooting" section to the `README` covering potential issues like cookie expiration or duplicate upload reports.
 
-2. **Packaging**
-   - [ ] Requirements.txt finalization
-   - [ ] Docker container (optional)
-   - [ ] Setup.py for installation
+2. **Packaging & Cleanup**
+   - [x] `requirements.txt` is finalized.
+   - [ ] Before running the final migration, ensure no sensitive data or temporary files are committed to version control.
 
 3. **User Guides**
-   - [ ] Step-by-step migration guide, including how to get the auth token.
-   - [ ] Video tutorial (optional)
-   - [ ] FAQ section
+   - [x] The `README.md` and `docs/how-to-download-tcx.md` serve as sufficient user guides.
 
 ### Deliverables
-- Complete documentation
-- Packaged application
-- User guides
+- Complete and accurate documentation.
+- A clean project state, ready for execution.
 
-## Phase 10: Post-Migration & Maintenance (Ongoing)
+## Phase 10: Post-Migration & Maintenance (2-3 hours)
 
 ### Objectives
 - Verify successful migration
-- Handle edge cases
-- Maintain compatibility
+- Archive the project
 
 ### Tasks
 1. **Verification**
-   - [ ] Compare MapMyRun vs Strava totals
-   - [ ] Spot-check activity details
-   - [ ] Verify all data transferred
+   - [ ] After the full migration, compare the total count from the source CSV against the `upload_successful` and `skipped_already_exists` counts in the database.
+   - [ ] Spot-check 10-20 activities on the Strava website to confirm data integrity.
 
 2. **Cleanup**
-   - [ ] Archive TCX files
-   - [ ] Clean up temporary files
-   - [ ] Document any issues
-   - [ ] Revert MapMyRun workouts to private settings (if they were ever made public)
+   - [ ] Archive the downloaded TCX files and the final database.
+   - [ ] Revoke the application's access in your Strava settings to secure your account.
 
-3. **Future Enhancements**
-   - [ ] Auto-sync new activities
-   - [ ] Support for other platforms
-   - [ ] GUI version
+3. **Final Audit**
+   - [ ] **(Low Priority)** Create a post-migration audit utility (`utils/strava_duplicate_audit.py`).
+   - [ ] This script will query the Strava API for all activities within the migration's date range.
+   - [ ] It will identify and report any dates that contain more than one activity, allowing for a final manual inspection of potential duplicates.
+
+4. **Future Enhancements**
+   - No further enhancements are planned for this single-purpose tool.
 
 ### Deliverables
-- Migration verification report
-- Archived data
-- Enhancement roadmap
+- Migration verification report.
+- Archived project data.
 
 ## Risk Mitigation
 
@@ -438,9 +426,8 @@ This phase, previously for Selenium-based authenticated downloads, is now obsole
 
 ## Current Project Status & Next Steps
 
-The project is now feature-complete and architecturally robust. All core phases of the migration plan have been implemented, with a strong focus on data integrity, error handling, and user control.
-- An automatic database migration system is in place, ensuring the application is self-healing against schema changes.
-- All TCX files have been intelligently validated, accounting for indoor activities.
-- The Strava uploader is resilient, handling API errors, duplicates, and missing metadata gracefully.
+The project's core features are complete and the application is stable and robust. All major development tasks outlined in this plan have been implemented. The application has been successfully tested with live data in batches, and the error handling, duplicate detection, and rate-limiting mechanisms have been proven to work effectively.
 
-**The next step is to run the final migration**, which involves executing the full pipeline, monitoring the upload, and verifying the results in Strava. The application is in a production-ready state for its single-user purpose.
+The application is now ready for the full, production migration of all remaining workouts.
+
+The only remaining tasks are post-migration activities, as outlined in **Phase 10**, such as performing a final audit and archiving the project data. No further feature development is required to complete the primary goal of the migration.

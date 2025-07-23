@@ -21,17 +21,17 @@ class Workout(Base):
 
     id = Column(Integer, primary_key=True)
     workout_id = Column(Integer, unique=True, nullable=False)
-    activity_name = Column(String)
-    notes = Column(String)
+    activity_name = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
     activity_type = Column(String)
     workout_date = Column(DateTime)
-    download_path = Column(String)
+    download_path = Column(String, nullable=True)
     mmr_status = Column(Enum('pending_download', 'download_failed', 'validation_successful', 'validation_failed'), default='pending_download', nullable=False)
     strava_status = Column(Enum('pending_upload', 'upload_successful', 'upload_failed', 'skipped_already_exists', 'upload_failed_file_not_found'), default='pending_upload', nullable=False)
-    strava_activity_id = Column(Integer)
+    strava_activity_id = Column(Integer, nullable=True)
 
     def __repr__(self):
-        return f"<Workout(workout_id='{self.workout_id}', mmr_status='{self.mmr_status}')>"
+        return f"<Workout(workout_id='{self.workout_id}', mmr_status='{self.mmr_status}', strava_status='{self.strava_status}')>"
 
 class DatabaseManager:
     """Handles all database interactions, including schema versioning and automatic rebuilds."""

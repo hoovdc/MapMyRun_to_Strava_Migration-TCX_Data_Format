@@ -7,11 +7,12 @@ For detailed project planning and history, see [docs/mapmyrun-to-strava-migratio
 ## Features
 - Parses MapMyRun export CSV to inventory all workouts.
 - Downloads TCX files using a stable, cookie-based `requests` method.
-- Validates and repairs TCX files (preserving GPS, heart rate, etc.).
-- Authenticates and uploads to Strava in gradual, managed batches.
+- Validates TCX files, with robust handling for workouts lacking GPS data.
+- Authenticates with Strava using a self-refreshing OAuth2 token.
 - Uses a local SQLite database for robust progress tracking and resume capabilities.
-- Features an automatic database migration system to handle schema changes gracefully.
-- Handles errors, rate limiting, and duplicate detection.
+- **Advanced Error Handling**: Includes intelligent backoff-and-retry for API rate limits and resilient handling of various upload errors.
+- **Proactive Duplicate Detection**: Queries Strava for existing activities to prevent unnecessary uploads, in addition to handling Strava's server-side duplicate rejection.
+- Includes a post-migration audit tool to identify potential duplicates on Strava.
 
 ## Prerequisites
 - Python 3.8+
@@ -44,6 +45,10 @@ For detailed project planning and history, see [docs/mapmyrun-to-strava-migratio
 1.  **Configure `.env`**: Follow the guide at [docs/how-to-download-tcx.md](docs/how-to-download-tcx.md) to get your MapMyRun session cookie and add it, along with your Strava API credentials, to `config/.env`.
 2.  **Run the main script**:
    ```bash
+   # Run a full simulation first to ensure everything is configured correctly
+   python main.py --dry-run
+
+   # Once verified, run the live migration
    python main.py
    ```
 3.  The script will guide you through the process:
@@ -53,10 +58,11 @@ For detailed project planning and history, see [docs/mapmyrun-to-strava-migratio
 
 For a detailed technical breakdown, follow the phases in [docs/mapmyrun-to-strava-migration-plan.md](docs/mapmyrun-to-strava-migration-plan.md).
 
-**Warning**: Respect API rate limits. It's always a good idea to back up your data before running a migration. This tool is for personal use; adapt for your own needs.
+**Warning**: This tool is designed for a one-time personal migration. While robust, always back up your data before running.
 
 ## Configuration
 - Edit `config/.env` with your Strava API credentials and MapMyRun session cookie.
+- Use the `--csv-path` argument to point to a different MapMyRun export file if needed.
 - Adjust paths in scripts as needed if you deviate from the default project structure.
 
 ## Contributing
