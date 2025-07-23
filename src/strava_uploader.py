@@ -68,10 +68,13 @@ class StravaUploader:
             
             return None
             
-        except RateLimitExceeded:
-            self._handle_rate_limit()
-            return self._is_duplicate(workout) # Retry after waiting
         except Exception as e:
+            # Broader exception handling to catch different forms of rate limit errors
+            response = getattr(e, 'response', None)
+            if response and hasattr(response, 'status_code') and response.status_code == 429:
+                self._handle_rate_limit()
+                return self._is_duplicate(workout) # Retry after waiting
+            
             logger.error(f"An unexpected error occurred during duplicate check for workout {workout.workout_id}: {e}. Proceeding with upload attempt.")
             return None
 
@@ -180,38 +183,44 @@ class StravaUploader:
                     # This handles timeout or poll() returning None
                     raise ActivityUploadFailed(f"Upload finished in an unknown state or was rejected mid-process. Uploader is {uploader}.")
 
-        except ActivityUploadFailed as e:
-            resp = getattr(e, "response", None)
-            
-            # Check for rate limit response first
-            if resp and resp.status_code == 429:
-                self._handle_rate_limit()
-                self.upload_activity(workout) # Retry the upload after waiting
-                return 
-
-            # Safely check for a response and a 409 status code for duplicates
-            if resp and resp.status_code == 409:
-                logger.warning(f"Upload failed for workout {workout.workout_id}: It already exists on Strava (409 Conflict).")
-                workout.strava_status = 'skipped_already_exists'
-            else:
-                # Handle other upload errors where a response might not exist
-                error_details = str(e)
-                logger.error(f"Upload failed for workout {workout.workout_id}: {error_details}")
-                
-                # Check for the duplicate string as a fallback for older stravalib versions or different error types
-                if 'duplicate of' in error_details.lower():
-                     workout.strava_status = 'skipped_already_exists'
-                else:
-                     workout.strava_status = 'upload_failed'
-            self.db_session.commit()
         except FileNotFoundError:
             logger.error(f"TCX file not found for workout {workout.workout_id} at {workout.download_path}")
             workout.strava_status = 'upload_failed_file_not_found'
             self.db_session.commit()
         except Exception as e:
+            # Broader exception handling to inspect for a 429 status code
+            response = getattr(e, 'response', None)
+            
+            # Check for rate limit response first
+            if response and hasattr(response, 'status_code') and response.status_code == 429:
+                self._handle_rate_limit()
+                self.upload_activity(workout) # Retry the upload after waiting
+                return 
+
+            # Handle ActivityUploadFailed specifically for more detailed duplicate checks
+            if isinstance(e, ActivityUploadFailed):
+                # Safely check for a response and a 409 status code for duplicates
+                if response and hasattr(response, 'status_code') and response.status_code == 409:
+                    logger.warning(f"Upload failed for workout {workout.workout_id}: It already exists on Strava (409 Conflict).")
+                    workout.strava_status = 'skipped_already_exists'
+                else:
+                    # Handle other upload errors where a response might not exist
+                    error_details = str(e)
+                    logger.error(f"Upload failed for workout {workout.workout_id}: {error_details}")
+                    
+                    # Check for the duplicate string as a fallback for older stravalib versions or different error types
+                    if 'duplicate of' in error_details.lower():
+                        workout.strava_status = 'skipped_already_exists'
+                    else:
+                        workout.strava_status = 'upload_failed'
+                self.db_session.commit()
+                return # Exit after handling the ActivityUploadFailed
+
+            # Fallback for any other unexpected exceptions
             logger.error(f"An unexpected error occurred during upload for workout {workout.workout_id}: {e}")
             workout.strava_status = 'upload_failed'
             self.db_session.rollback() # Rollback for unexpected errors
+            self.db_session.commit()
 
 
     def bulk_upload(self, workouts: List[Workout]) -> None:

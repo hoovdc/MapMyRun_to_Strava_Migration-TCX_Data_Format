@@ -254,7 +254,7 @@ This phase, previously for Selenium-based authenticated downloads, is now obsole
    - [x] Batch processing with user-configurable batch sizes.
    - [x] User confirmation prompt with single-file test option.
    - [x] **Advanced Duplicate Handling**: Implemented both proactive and reactive duplicate detection. The script first queries Strava for activities with similar metrics on the same day to prevent an upload attempt. It also correctly handles `409 Conflict` API responses from Strava if a duplicate is found post-upload.
-   - [x] **Intelligent Rate Limit Handling**: The uploader now includes a robust backoff-and-retry mechanism. Upon receiving a `429 Too Many Requests` error, it will automatically pause for 15 minutes and then resume the operation, ensuring large batches can complete without interruption.
+   - [ ] **(In-Progress)** **Intelligent Rate Limit Handling**: An initial backoff-and-retry mechanism has been implemented. However, scaled testing has revealed it does not correctly catch all `429` rate-limit exceptions from the Strava API. This is a high-priority bug that must be fixed before proceeding with the full migration.
    - [x] Upload progress tracking with SQLite (`strava_status` updates).
    - [x] Error recovery for individual upload failures.
 
@@ -327,6 +327,7 @@ This phase, previously for Selenium-based authenticated downloads, is now obsole
    - [x] After implementing `--dry-run`, an end-to-end test has been performed, verifying the logs show the correct intended actions.
    - [x] After implementing improved duplicate handling, tests on known duplicates have confirmed they are correctly marked `skipped_already_exists`.
    - [x] A small batch has been verified end-to-end, checking Strava for data integrity (GPS, HR, timestamps) after the live upload.
+   - [x] A subsequent test run with the refined rate-limit handling showed perfect duplicate detection across a small batch. The rate limit itself was not triggered, so the new handler has not yet been stress-tested at high volume.
 
 3. **Performance Optimization**
    - [ ] Memory usage profiling during a large batch run (if needed).
@@ -394,7 +395,7 @@ This phase, previously for Selenium-based authenticated downloads, is now obsole
    - **Solution**: This is a low risk for a one-time migration. If it changes, the `base_url` in `MmrDownloader` can be easily updated. The core authentication method is more stable than UI elements.
 
 2. **Rate Limiting/IP Blocking**
-   - **Solution**: The plan already includes conservative rate limiting (2-3 second delays). We can implement exponential backoff if 429 "Too Many Requests" errors occur. Rotating user agents is also a good practice.
+   - **Solution**: The plan includes a backoff-and-retry mechanism. However, the initial implementation has proven insufficient, as the `stravalib` library can raise different types of exceptions for rate-limit conditions depending on the operation (e.g., direct API calls vs. polling). The solution requires refining the `except` blocks in the uploader to correctly identify all `429` responses, ensuring the 15-minute cooldown is triggered reliably.
 
 3. **Session Cookie Invalidation**
    - **Risk**: The `auth_token` cookie might expire during a long-running download process.
@@ -426,8 +427,8 @@ This phase, previously for Selenium-based authenticated downloads, is now obsole
 
 ## Current Project Status & Next Steps
 
-The project's core features are complete and the application is stable and robust. All major development tasks outlined in this plan have been implemented. The application has been successfully tested with live data in batches, and the error handling, duplicate detection, and rate-limiting mechanisms have been proven to work effectively.
+While core features are complete, scaled testing has revealed a critical issue with the Strava API rate-limit handling. A robust fix has been implemented to catch a broader range of rate-limit exceptions, but this new handler has not yet been verified under high-volume conditions that are known to trigger the limit.
 
-The application is now ready for the full, production migration of all remaining workouts.
+**This remains a potential blocking issue.** The application is not considered fully ready for the final migration until the rate-limit fix is proven to be effective in a large-batch test.
 
-The only remaining tasks are post-migration activities, as outlined in **Phase 10**, such as performing a final audit and archiving the project data. No further feature development is required to complete the primary goal of the migration.
+The next and highest development priority is to verify the rate-limit backoff-and-retry mechanism in `src/strava_uploader.py` by running a larger batch (e.g., 100+) until the API limit is hit and the handler is triggered.
