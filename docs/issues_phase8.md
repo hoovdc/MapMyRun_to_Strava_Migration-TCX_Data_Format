@@ -15,6 +15,18 @@ This document outlines the root causes and resolutions for issues discovered dur
 - Changes affect retry logic and could impact upload flow
 - Requires controlled testing with deliberate rate limit triggering
 
+### **Prerequisites**
+- Working development environment with access to Strava API
+- Test dataset of problematic TCX files (use `utils/get_failed_validation_ids.py`)
+- Ability to trigger controlled rate limits without affecting production data
+- Log monitoring setup to capture diagnostic information
+
+### **Success Criteria**
+- **Issue 1**: Rate limit exceptions properly caught and handled with appropriate cooldowns
+- **Issue 2**: Clear diagnostic information logged for rejected uploads, including file validation results
+- **Testing**: Successful completion of controlled rate-limit test scenarios
+- **Monitoring**: API call counting provides early warning before limits are reached
+
 ### **Testing Strategy**
 - **Controlled Rate-Limit Testing**:  
   - *Stage 1 (15-minute window)*: Execute a small burst of 5-10 uploads in rapid succession to intentionally exceed the short-term limit.  
@@ -41,9 +53,36 @@ This document outlines the root causes and resolutions for issues discovered dur
   3. **API Response Changes**: Strava's API response format may have changed since implementation
   4. **Dedicated `RateLimitExceeded` Exception**: Newer `stravalib` versions raise `stravalib.exc.RateLimitExceeded`, which may bypass current checks.
 
+- **Immediate Fix Example:**
+  ```python
+  # In both _is_duplicate() and upload_activity() methods
+  try:
+      # ... existing API call logic ...
+  except RateLimitExceeded as e:
+      logger.error(f"Rate limit exceeded (dedicated exception): {e}")
+      self._handle_rate_limit()
+      return self._is_duplicate(workout)  # Retry after waiting
+  except Exception as e:
+      # Enhanced diagnostic logging
+      logger.error(f"Exception in _is_duplicate for workout {workout.workout_id}: "
+                  f"Type: {type(e).__name__}, Message: {str(e)}")
+      
+      # Existing fallback logic for status code checking
+      response = getattr(e, 'response', None)
+      if response and hasattr(response, 'status_code') and response.status_code == 429:
+          if hasattr(response, 'headers'):
+              logger.debug(f"Rate limit headers: {dict(response.headers)}")
+          self._handle_rate_limit()
+          return self._is_duplicate(workout)
+      
+      logger.error(f"An unexpected error occurred during duplicate check for workout {workout.workout_id}: {e}. Proceeding with upload attempt.")
+      return None
+  ```
+
 - **Resolution Plan:**
   - [ ] **Phase 1: Enhanced Diagnostic Logging**
-    - [ ] Add detailed exception logging to `_is_duplicate()` and `upload_activity()` to capture `type(e).__name__`, `str(e)`, and `repr(e)`.
+    - [ ] **Add specific `RateLimitExceeded` exception handling** to `_is_duplicate()` and `upload_activity()` methods before general exception catching
+    - [ ] Add detailed exception logging to capture `type(e).__name__`, `str(e)`, and `repr(e)` for all unhandled exceptions.
     - [ ] When a `response` object exists, log its key headers (`Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Usage`) for immediate cooldown insights.
     - [ ] Implement API-call counting across all methods to track proximity to both 15-minute and daily limits.
     - [ ] Use `logger.debug()` / `logger.error()` so that *all* diagnostics are written to log files, never to the console.
@@ -54,9 +93,25 @@ This document outlines the root causes and resolutions for issues discovered dur
     - [ ] Add fallback detection for rate limit scenarios that don't match expected patterns
 
   - [ ] **Phase 3: Enhanced Rate Limiting Strategy**
-    - [ ] Implement dynamic cooldowns that derive the wait period from Strava’s `Retry-After` or `X-RateLimit-Reset` headers (fallback 900 s).
+    - [ ] Implement dynamic cooldowns that derive the wait period from Strava's `Retry-After` or `X-RateLimit-Reset` headers (fallback 900 s).
     - [ ] Add inter-batch delays for high-volume uploads based on running call counts.
     - [ ] Consider reducing maximum batch size from 300 to 50 for safer operation.
+    - [ ] **API Call Counter Implementation:**
+      ```python
+      # Add to StravaUploader.__init__
+      self.api_call_count = 0
+      self.api_call_start_time = time.time()
+      
+      def _count_api_call(self, operation_name: str):
+          """Track API calls for rate limit monitoring"""
+          self.api_call_count += 1
+          elapsed = time.time() - self.api_call_start_time
+          logger.debug(f"API call #{self.api_call_count} ({operation_name}) - {elapsed:.1f}s elapsed")
+          
+          # Warning at 80% of 15-min limit (80 calls)
+          if self.api_call_count % 20 == 0:
+              logger.info(f"API usage: {self.api_call_count} calls in {elapsed/60:.1f} minutes")
+      ```
 
 ---
 
@@ -95,10 +150,11 @@ This document outlines the root causes and resolutions for issues discovered dur
             file_size = os.path.getsize(workout.download_path)
             logger.debug(f"TCX file exists, size: {file_size} bytes")
 
-            # Run lightweight TCX structure validation
-            from tcx_validator import validate_tcx  # example helper
-            validator_summary = validate_tcx(workout.download_path, preview_chars=200)
-            logger.debug(f"TCX validator summary: {validator_summary}")
+            # Use existing TcxValidator class properly
+            from src.tcx_validator import TcxValidator
+            validator = TcxValidator()
+            is_valid = validator.validate(workout.download_path)
+            logger.debug(f"TCX validation result: {'PASSED' if is_valid else 'FAILED'}")
         else:
             logger.error("TCX file does not exist at specified path")
 
