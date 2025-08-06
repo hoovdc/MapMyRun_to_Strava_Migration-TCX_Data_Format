@@ -30,6 +30,28 @@ class StravaUploader:
         self.client = client
         self.db_session = db_session
         self.dry_run = dry_run
+        self.api_call_count = 0
+        self.api_call_start_time = time.time()
+
+    def _count_api_call(self, operation_name: str):
+        """Track API calls for rate limit monitoring"""
+        self.api_call_count += 1
+        elapsed = time.time() - self.api_call_start_time
+        logger.debug(f"API call #{self.api_call_count} ({operation_name}) - {elapsed:.1f}s elapsed")
+        
+        # Strava limits: 200 overall/15min, 100 non-upload/15min
+        upload_operations = {'upload_activity', 'poll_upload'}
+        if operation_name in upload_operations:
+            limit = 200  # Overall limit includes uploads
+            warning_threshold = 160  # 80% of overall limit
+        else:
+            limit = 100  # Non-upload limit (get_activities, etc.)
+            warning_threshold = 80   # 80% of non-upload limit
+            
+        if self.api_call_count % 20 == 0:
+            logger.info(f"API usage: {self.api_call_count} calls in {elapsed/60:.1f} minutes")
+            if self.api_call_count >= warning_threshold:
+                logger.warning(f"Approaching rate limit ({self.api_call_count}/{limit} in 15min window)")
 
     def _is_duplicate(self, workout: Workout) -> Optional[int]:
         """
@@ -51,6 +73,7 @@ class StravaUploader:
             day_end = datetime.combine(workout.workout_date.date(), dt_time.max)
 
             # 3. Query Strava for activities on that day
+            self._count_api_call("get_activities")
             remote_activities = self.client.get_activities(after=day_start, before=day_end)
             
             # 4. Compare metrics
@@ -68,20 +91,62 @@ class StravaUploader:
             
             return None
             
+        except RateLimitExceeded as e:
+            logger.error(f"Rate limit exceeded (dedicated exception): {e}")
+            self._handle_rate_limit()
+            return self._is_duplicate(workout)  # Retry after waiting
         except Exception as e:
-            # Broader exception handling to catch different forms of rate limit errors
+            # Enhanced diagnostic logging
+            logger.error(f"Exception in _is_duplicate for workout {workout.workout_id}: "
+                        f"Type: {type(e).__name__}, Message: {str(e)}")
+            
+            # Fallback logic for status code checking
             response = getattr(e, 'response', None)
             if response and hasattr(response, 'status_code') and response.status_code == 429:
-                self._handle_rate_limit()
-                return self._is_duplicate(workout) # Retry after waiting
+                headers = getattr(response, 'headers', None)
+                if headers:
+                    logger.debug(f"Rate limit headers: {dict(headers)}")
+                self._handle_rate_limit(headers)
+                return self._is_duplicate(workout)
             
             logger.error(f"An unexpected error occurred during duplicate check for workout {workout.workout_id}: {e}. Proceeding with upload attempt.")
             return None
 
-    def _handle_rate_limit(self):
+    def _handle_rate_limit(self, headers=None):
         """Pauses execution when a rate limit error is detected."""
-        logger.warning("Strava API rate limit exceeded. Pausing for 15 minutes...")
-        for i in tqdm(range(900), desc="Rate Limit Cooldown"):
+        # Calculate time until next 15-minute reset interval (0, 15, 30, 45 minutes after hour)
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        minutes_past_hour = now.minute
+        
+        # Find next reset point
+        next_reset_minute = ((minutes_past_hour // 15) + 1) * 15
+        if next_reset_minute >= 60:
+            next_reset_minute = 0
+            next_reset_hour = (now.hour + 1) % 24
+        else:
+            next_reset_hour = now.hour
+        
+        next_reset = now.replace(hour=next_reset_hour, minute=next_reset_minute, second=0, microsecond=0)
+        if next_reset <= now:
+            next_reset += timedelta(days=1)
+        
+        # Default: wait until next reset + 30s buffer
+        default_cooldown = int((next_reset - now).total_seconds()) + 30
+        
+        # Use Retry-After if provided and reasonable
+        cooldown = default_cooldown
+        if headers and 'Retry-After' in headers:
+            try:
+                retry_after = int(headers['Retry-After'])
+                if 0 < retry_after <= 900:  # Sanity check
+                    cooldown = retry_after
+                    logger.info(f"Using Retry-After header: {cooldown} seconds")
+            except (ValueError, TypeError):
+                logger.warning("Could not parse Retry-After header, using calculated cooldown")
+        
+        logger.warning(f"Strava API rate limit exceeded. Pausing for {cooldown // 60}m {cooldown % 60}s until next reset...")
+        for i in tqdm(range(cooldown), desc="Rate Limit Cooldown"):
             time.sleep(1)
         logger.info("Resuming...")
 
@@ -145,6 +210,7 @@ class StravaUploader:
             name = workout.activity_name or f"{mapped_activity_type.title()} on {workout.workout_date:%Y-%m-%d}"
             
             with open(workout.download_path, 'rb') as f:
+                self._count_api_call("upload_activity")
                 uploader = self.client.upload_activity(
                     activity_file=f,
                     data_type='tcx',
@@ -155,8 +221,29 @@ class StravaUploader:
                 )
                 
                 if uploader is None:
-                    # Stravalib returns None if the upload is immediately rejected.
-                    raise ActivityUploadFailed("Upload immediately rejected by Strava. The TCX file may be corrupt or invalid.")
+                    # Comprehensive diagnostic logging (file-only)
+                    error_msg = (
+                        f"Upload immediately rejected by Strava for workout {workout.workout_id}. "
+                        f"TCX file: {workout.download_path}"
+                    )
+                    logger.error(error_msg)
+
+                    # File diagnostics
+                    if workout.download_path and os.path.exists(workout.download_path):
+                        file_size = os.path.getsize(workout.download_path)
+                        logger.debug(f"TCX file exists, size: {file_size} bytes")
+
+                        # Use existing TcxValidator class for validation diagnostics
+                        from src.tcx_validator import TcxValidator
+                        validator = TcxValidator()
+                        is_valid = validator.validate(workout.download_path)
+                        logger.debug(f"TCX validation result: {'PASSED' if is_valid else 'FAILED'}")
+                    else:
+                        logger.error("TCX file does not exist at specified path")
+
+                    raise ActivityUploadFailed(
+                        f"{error_msg}. Possible causes: corrupt file, invalid data, or API rejection."
+                    )
 
                 # --- Manual Polling Loop with Timeout ---
                 start_time = time.time()
@@ -168,6 +255,7 @@ class StravaUploader:
                     
                     logger.debug(f"Polling for upload status of workout {workout.workout_id}...")
                     time.sleep(3)
+                    self._count_api_call("poll_upload")
                     uploader = uploader.poll()
 
                 if uploader and uploader.is_complete:
@@ -187,15 +275,24 @@ class StravaUploader:
             logger.error(f"TCX file not found for workout {workout.workout_id} at {workout.download_path}")
             workout.strava_status = 'upload_failed_file_not_found'
             self.db_session.commit()
+        except RateLimitExceeded as e:
+            logger.error(f"Rate limit exceeded (dedicated exception): {e}")
+            self._handle_rate_limit()
+            self.upload_activity(workout)  # Retry after waiting
+            return
         except Exception as e:
-            # Broader exception handling to inspect for a 429 status code
-            response = getattr(e, 'response', None)
+            # Enhanced diagnostic logging
+            logger.error(f"Exception in upload_activity for workout {workout.workout_id}: "
+                        f"Type: {type(e).__name__}, Message: {str(e)}")
             
-            # Check for rate limit response first
+            response = getattr(e, 'response', None)
             if response and hasattr(response, 'status_code') and response.status_code == 429:
-                self._handle_rate_limit()
-                self.upload_activity(workout) # Retry the upload after waiting
-                return 
+                headers = getattr(response, 'headers', None)
+                if headers:
+                    logger.debug(f"Rate limit headers: {dict(headers)}")
+                self._handle_rate_limit(headers)
+                self.upload_activity(workout)
+                return
 
             # Handle ActivityUploadFailed specifically for more detailed duplicate checks
             if isinstance(e, ActivityUploadFailed):
