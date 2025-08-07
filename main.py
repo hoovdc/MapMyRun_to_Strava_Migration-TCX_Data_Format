@@ -21,6 +21,7 @@ def main():
     """
     parser = argparse.ArgumentParser(description="MapMyRun to Strava Migration Tool.")
     parser.add_argument('--dry-run', action='store_true', help="Simulate the upload process without making any actual API calls to Strava.")
+    parser.add_argument('--dry-run-limit', type=int, default=20, help="Limit the number of activities simulated during dry-run (default: 20)")
     parser.add_argument('--csv-path', type=str, default='data/From_MapMyRun/CSV_for_event_ID_extraction/user16881_workout_history.csv', help='Path to the MapMyRun workout history CSV file.')
     args = parser.parse_args()
 
@@ -190,8 +191,12 @@ def main():
                 logger.info(f"Found {len(workouts_to_upload)} workouts ready to upload to Strava.")
                 
                 if args.dry_run:
-                    logger.info(f"[DRY-RUN] Simulating upload for {len(workouts_to_upload)} workouts.")
-                    uploader.bulk_upload(workouts_to_upload)
+                    # Limit simulation size to keep console output concise
+                    total = len(workouts_to_upload)
+                    limit = max(0, args.dry_run_limit or 0)
+                    limited_list = workouts_to_upload[:limit] if limit else workouts_to_upload
+                    logger.info(f"[DRY-RUN] Simulating upload for {len(limited_list)} of {total} workouts (limit={limit}).")
+                    uploader.bulk_upload(limited_list)
                     logger.info("[DRY-RUN] Simulation complete. No data was sent to Strava.")
                     return
 

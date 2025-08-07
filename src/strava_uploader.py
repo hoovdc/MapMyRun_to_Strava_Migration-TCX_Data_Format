@@ -2,7 +2,7 @@ import logging
 import os
 import time
 from typing import List, Optional
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta
 
 from stravalib.client import Client
 from stravalib.exc import ActivityUploadFailed, RateLimitExceeded
@@ -183,7 +183,8 @@ class StravaUploader:
         """
         Uploads a single TCX file to Strava, including metadata from the database.
         """
-        logger.info(f"Preparing to upload workout {workout.workout_id} ({workout.activity_name})...")
+        log_fn = logger.debug if self.dry_run else logger.info
+        log_fn(f"Preparing to upload workout {workout.workout_id} ({workout.activity_name})...")
         
         if not workout.download_path or not os.path.exists(workout.download_path):
             logger.error(f"TCX file not found for workout {workout.workout_id} at {workout.download_path or '[No Path]'}")
@@ -192,7 +193,7 @@ class StravaUploader:
             return
 
         if self.dry_run:
-            logger.info(f"[DRY-RUN] Would upload '{workout.activity_name}' with external_id 'mmr_{workout.workout_id}'.")
+            log_fn(f"[DRY-RUN] Would upload '{workout.activity_name}' with external_id 'mmr_{workout.workout_id}'.")
             return
 
         # --- Proactive Duplicate Check ---
@@ -332,9 +333,22 @@ class StravaUploader:
         
         with tqdm(total=len(workouts), desc="Uploading Batch") as pbar:
             for workout in workouts:
-                self.upload_activity(workout)
+                # Reduce console noise during dry-run by lowering per-item log verbosity
+                if self.dry_run:
+                    # Temporarily adjust logger level for this module to reduce INFO noise
+                    module_logger = logging.getLogger(__name__)
+                    previous_level = module_logger.level
+                    try:
+                        if previous_level <= logging.INFO:
+                            module_logger.setLevel(logging.DEBUG)
+                        self.upload_activity(workout)
+                    finally:
+                        module_logger.setLevel(previous_level)
+                else:
+                    self.upload_activity(workout)
                 pbar.update(1)
                 # Safer per-upload delay to keep under Strava's 100 uploads / 15 min cap
-                time.sleep(6)
+                if not self.dry_run:
+                    time.sleep(6)
 
         logger.info("Batch complete.")
