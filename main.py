@@ -179,16 +179,32 @@ def main():
 
             # --- Phase 6: Strava Bulk Upload ---
             uploader = StravaUploader(client=strava_client, db_session=session, dry_run=args.dry_run)
-            
-            workouts_to_upload = session.query(Workout).filter(
+
+            # Prioritize pending uploads, then randomized failed uploads to avoid
+            # retrying the same records first on every run (no DB changes required).
+            pending_to_upload = session.query(Workout).filter(
                 Workout.mmr_status == 'validation_successful',
-                (Workout.strava_status == 'pending_upload') | (Workout.strava_status == 'upload_failed')
+                Workout.strava_status == 'pending_upload'
             ).all()
+
+            failed_to_retry = session.query(Workout).filter(
+                Workout.mmr_status == 'validation_successful',
+                Workout.strava_status == 'upload_failed'
+            ).all()
+
+            # Randomize failed set order for fair retries across runs
+            import random as _random
+            _random.shuffle(failed_to_retry)
+
+            workouts_to_upload = pending_to_upload + failed_to_retry
 
             if not workouts_to_upload:
                 logger.info("No workouts pending for Strava upload.")
             else:
-                logger.info(f"Found {len(workouts_to_upload)} workouts ready to upload to Strava.")
+                logger.info(
+                    f"Found {len(workouts_to_upload)} workouts ready to upload to Strava "
+                    f"({len(pending_to_upload)} pending + {len(failed_to_retry)} failed)."
+                )
                 
                 if args.dry_run:
                     # Limit simulation size to keep console output concise

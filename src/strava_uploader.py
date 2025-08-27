@@ -332,6 +332,7 @@ class StravaUploader:
         logger.info(f"Processing batch of {len(workouts)} workouts...")
         
         with tqdm(total=len(workouts), desc="Uploading Batch") as pbar:
+            attempted_workouts: List[Workout] = []
             for workout in workouts:
                 # Reduce console noise during dry-run by lowering per-item log verbosity
                 if self.dry_run:
@@ -346,9 +347,19 @@ class StravaUploader:
                         module_logger.setLevel(previous_level)
                 else:
                     self.upload_activity(workout)
+                attempted_workouts.append(workout)
                 pbar.update(1)
                 # Safer per-upload delay to keep under Strava's 100 uploads / 15 min cap
                 if not self.dry_run:
                     time.sleep(6)
 
-        logger.info("Batch complete.")
+        # --- Batch Summary ---
+        if self.dry_run:
+            logger.info(f"Batch complete. [DRY-RUN] Attempted: {len(attempted_workouts)} (no status changes in dry-run)")
+        else:
+            status_counts: dict[str, int] = {}
+            for w in attempted_workouts:
+                status_counts[w.strava_status] = status_counts.get(w.strava_status, 0) + 1
+            summary_parts = [f"{k}={v}" for k, v in sorted(status_counts.items())]
+            summary_text = ", ".join(summary_parts) if summary_parts else "no results"
+            logger.info(f"Batch complete. Attempted: {len(attempted_workouts)} | {summary_text}")
