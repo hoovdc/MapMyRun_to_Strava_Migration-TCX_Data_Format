@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help="Simulate the upload process without making any actual API calls to Strava.")
     parser.add_argument('--dry-run-limit', type=int, default=20, help="Limit the number of activities simulated during dry-run (default: 20)")
     parser.add_argument('--csv-path', type=str, default='data/From_MapMyRun/CSV_for_event_ID_extraction/user16881_workout_history.csv', help='Path to the MapMyRun workout history CSV file.')
+    parser.add_argument('--skip-non-runs', action='store_true', default=True, help="Skip non-run activities during upload (default: True)")
     args = parser.parse_args()
 
     load_dotenv(dotenv_path='config/.env')
@@ -215,6 +216,10 @@ def main():
                     uploader.bulk_upload(limited_list)
                     logger.info("[DRY-RUN] Simulation complete. No data was sent to Strava.")
                     return
+
+                if args.skip_non_runs:
+                    workouts_to_upload = [w for w in workouts_to_upload if 'run' in w.activity_type.lower()]
+                    logger.info(f"Filtered to {len(workouts_to_upload)} run activities (skipped non-runs).")
 
                 print("\n--- Strava Upload Options ---")
                 print("1. Upload a single activity for testing.")

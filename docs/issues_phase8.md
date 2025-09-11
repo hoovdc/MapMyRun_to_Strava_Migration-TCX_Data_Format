@@ -12,7 +12,7 @@ This document outlines the root causes and resolutions for issues discovered dur
 - New Focus: Manual diagnostics and TCX repairs before scaled testing.
 
 ### **Testing Strategy** (Updated)
-- **Controlled Rate-Limit Testing**: 
+- **Controlled Rate-Limit Testing**:  
   - Stage 1 (15-minute window): Execute a small burst of 5-10 uploads in rapid succession to intentionally exceed the short-term limit.  
   - Stage 2 (Daily window): Follow with a wider burst (≈600 API calls spread over ~60 minutes) to probe the daily cap.  
   - Note: Each duplicate-check issues extra API calls, so uploads ≠ total calls.

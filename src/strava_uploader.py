@@ -297,16 +297,16 @@ class StravaUploader:
 
             if isinstance(e, ActivityUploadFailed):
                 error_details = str(e).lower()
-                if any(term in error_details for term in ['duplicate of', 'already exists', 'duplicate']):
-                    logger.info(f"Detected duplicate for workout {workout.workout_id}: {e}. Skipping.")
+                if any(term in error_details for term in ['duplicate of', 'duplicate', 'already exists']):
+                    logger.info(f"Detected duplicate for workout {workout.workout_id}: {str(e)}. Skipping.")
                     workout.strava_status = 'skipped_already_exists'
                 elif any(term in error_details for term in ['rate limit', 'exceeded', 'too many requests']):
-                    logger.warning(f"Rate limit hit during upload for workout {workout.workout_id}: {e}. Retrying after cooldown.")
+                    logger.warning(f"Rate limit hit during upload for workout {workout.workout_id}: {str(e)}. Retrying after cooldown.")
                     self._handle_rate_limit(headers=getattr(response, 'headers', None))
                     self.upload_activity(workout)  # Immediate retry
                     return
                 else:
-                    logger.error(f"True upload failure for workout {workout.workout_id}: {e}")
+                    logger.error(f"True upload failure for workout {workout.workout_id}: {str(e)}")
                     workout.strava_status = 'upload_failed'
                 self.db_session.commit()
                 return
