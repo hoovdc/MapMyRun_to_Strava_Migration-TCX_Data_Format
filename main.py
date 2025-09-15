@@ -207,6 +207,11 @@ def main():
                     f"({len(pending_to_upload)} pending + {len(failed_to_retry)} failed)."
                 )
                 
+                # Apply activity type filtering before dry-run or actual upload
+                if args.skip_non_runs:
+                    workouts_to_upload = [w for w in workouts_to_upload if 'run' in w.activity_type.lower()]
+                    logger.info(f"Filtered to {len(workouts_to_upload)} run activities (skipped non-runs).")
+                
                 if args.dry_run:
                     # Limit simulation size to keep console output concise
                     total = len(workouts_to_upload)
@@ -216,10 +221,6 @@ def main():
                     uploader.bulk_upload(limited_list)
                     logger.info("[DRY-RUN] Simulation complete. No data was sent to Strava.")
                     return
-
-                if args.skip_non_runs:
-                    workouts_to_upload = [w for w in workouts_to_upload if 'run' in w.activity_type.lower()]
-                    logger.info(f"Filtered to {len(workouts_to_upload)} run activities (skipped non-runs).")
 
                 print("\n--- Strava Upload Options ---")
                 print("1. Upload a single activity for testing.")
