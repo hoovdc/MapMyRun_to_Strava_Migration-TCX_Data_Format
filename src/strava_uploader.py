@@ -270,7 +270,8 @@ class StravaUploader:
                     raise ActivityUploadFailed(f"Upload failed with error: {uploader.error}")
                 else:
                     # This handles timeout or poll() returning None
-                    raise ActivityUploadFailed(f"Upload finished in an unknown state or was rejected mid-process. Uploader is {uploader}.")
+                    # Often indicates duplicate detection by Strava
+                    raise ActivityUploadFailed(f"Upload finished in an unknown state or was rejected mid-process. Uploader is {uploader}. Likely duplicate.")
 
         except FileNotFoundError:
             logger.error(f"TCX file not found for workout {workout.workout_id} at {workout.download_path}")
@@ -297,7 +298,7 @@ class StravaUploader:
 
             if isinstance(e, ActivityUploadFailed):
                 error_details = str(e).lower()
-                if any(term in error_details for term in ['duplicate of', 'duplicate', 'already exists']):
+                if any(term in error_details for term in ['duplicate of', 'duplicate', 'already exists', 'likely duplicate']):
                     logger.info(f"Detected duplicate for workout {workout.workout_id}: {str(e)}. Skipping.")
                     workout.strava_status = 'skipped_already_exists'
                 elif any(term in error_details for term in ['rate limit', 'exceeded', 'too many requests']):
