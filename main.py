@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--dry-run-limit', type=int, default=20, help="Limit the number of activities simulated during dry-run (default: 20)")
     parser.add_argument('--csv-path', type=str, default='data/From_MapMyRun/CSV_for_event_ID_extraction/user16881_workout_history.csv', help='Path to the MapMyRun workout history CSV file.')
     parser.add_argument('--skip-non-runs', action='store_true', default=True, help="Skip non-run activities during upload (default: True)")
+    parser.add_argument('--batch-size', type=int, help="Run in non-interactive mode with specified batch size (5, 10, 50, 100, 300)")
     args = parser.parse_args()
 
     load_dotenv(dotenv_path='config/.env')
@@ -220,6 +221,19 @@ def main():
                     logger.info(f"[DRY-RUN] Simulating upload for {len(limited_list)} of {total} workouts (limit={limit}).")
                     uploader.bulk_upload(limited_list)
                     logger.info("[DRY-RUN] Simulation complete. No data was sent to Strava.")
+                    return
+
+                # Non-interactive mode with --batch-size
+                if args.batch_size:
+                    if args.batch_size not in [5, 10, 50, 100, 300]:
+                        logger.error(f"Invalid batch size {args.batch_size}. Must be one of: 5, 10, 50, 100, 300")
+                        return
+                    
+                    logger.info(f"Running in non-interactive mode with batch size {args.batch_size}")
+                    batch = workouts_to_upload[:args.batch_size]
+                    logger.info(f"Processing {len(batch)} workouts from {len(workouts_to_upload)} total")
+                    uploader.bulk_upload(batch)
+                    logger.info("Non-interactive upload complete.")
                     return
 
                 print("\n--- Strava Upload Options ---")

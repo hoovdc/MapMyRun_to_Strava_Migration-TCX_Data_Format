@@ -4,7 +4,7 @@ Test script to verify the duplicate detection fix works.
 """
 import os
 import sys
-sys.path.append('../src')
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from database_manager import DatabaseManager, Workout
 from strava_uploader import StravaUploader
