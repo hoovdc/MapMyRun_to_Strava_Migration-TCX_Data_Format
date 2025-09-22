@@ -301,10 +301,93 @@ def main():
 
     finally:
         if session:
+            # Generate final status summary
+            print_final_status_summary(session)
             session.close()
             logger.info("Database session closed.")
 
     logger.info("Migration script finished.")
+
+
+def print_final_status_summary(session):
+    """
+    Print a comprehensive summary of all workout statuses at the end of the run.
+    """
+    print("\n" + "="*60)
+    print("FINAL STATUS SUMMARY")
+    print("="*60)
+    
+    # Get all workouts
+    all_workouts = session.query(Workout).all()
+    total_workouts = len(all_workouts)
+    
+    if total_workouts == 0:
+        print("No workouts found in database.")
+        return
+    
+    # Count by MMR status
+    mmr_status_counts = {}
+    for workout in all_workouts:
+        status = workout.mmr_status or 'unknown'
+        mmr_status_counts[status] = mmr_status_counts.get(status, 0) + 1
+    
+    # Count by Strava status
+    strava_status_counts = {}
+    for workout in all_workouts:
+        status = workout.strava_status or 'not_processed'
+        strava_status_counts[status] = strava_status_counts.get(status, 0) + 1
+    
+    # Count by activity type
+    activity_type_counts = {}
+    for workout in all_workouts:
+        activity_type = workout.activity_type or 'unknown'
+        activity_type_counts[activity_type] = activity_type_counts.get(activity_type, 0) + 1
+    
+    # Display summary
+    print(f"Total Workouts: {total_workouts}")
+    print()
+    
+    print("MapMyRun Processing Status:")
+    for status, count in sorted(mmr_status_counts.items()):
+        percentage = (count / total_workouts) * 100
+        print(f"  {status}: {count} ({percentage:.1f}%)")
+    print()
+    
+    print("Strava Upload Status:")
+    for status, count in sorted(strava_status_counts.items()):
+        percentage = (count / total_workouts) * 100
+        print(f"  {status}: {count} ({percentage:.1f}%)")
+    print()
+    
+    print("Activity Types:")
+    for activity_type, count in sorted(activity_type_counts.items(), key=lambda x: x[1], reverse=True):
+        percentage = (count / total_workouts) * 100
+        print(f"  {activity_type}: {count} ({percentage:.1f}%)")
+    print()
+    
+    # Calculate key metrics
+    successful_uploads = strava_status_counts.get('upload_successful', 0)
+    skipped_duplicates = strava_status_counts.get('skipped_already_exists', 0)
+    confirmed_on_strava = successful_uploads + skipped_duplicates
+    
+    pending_uploads = strava_status_counts.get('pending_upload', 0)
+    failed_uploads = strava_status_counts.get('upload_failed', 0)
+    remaining_to_process = pending_uploads + failed_uploads
+    
+    print("KEY METRICS:")
+    print(f"  Activities confirmed on Strava: {confirmed_on_strava} ({(confirmed_on_strava/total_workouts)*100:.1f}%)")
+    print(f"  Activities remaining to process: {remaining_to_process} ({(remaining_to_process/total_workouts)*100:.1f}%)")
+    
+    if confirmed_on_strava / total_workouts >= 0.95:
+        print("  🎉 SUCCESS: 95%+ of activities are confirmed on Strava!")
+    elif confirmed_on_strava / total_workouts >= 0.90:
+        print("  ✅ EXCELLENT: 90%+ of activities are confirmed on Strava!")
+    elif confirmed_on_strava / total_workouts >= 0.80:
+        print("  👍 GOOD: 80%+ of activities are confirmed on Strava!")
+    else:
+        print(f"  ⚠️  IN PROGRESS: {int(0.95 * total_workouts) - confirmed_on_strava} more confirmations needed for 95% target")
+    
+    print("="*60)
 
 
 if __name__ == "__main__":
