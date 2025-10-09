@@ -1,7 +1,7 @@
 import logging
 import os
 import sqlite3
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Enum
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Enum, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -42,7 +42,18 @@ class DatabaseManager:
         
         self._check_schema_version()
 
-        self.engine = create_engine(f'sqlite:///{self.db_path}')
+        # Enable WAL mode for better concurrent access
+        self.engine = create_engine(
+            f'sqlite:///{self.db_path}',
+            connect_args={'check_same_thread': False},
+            pool_pre_ping=True
+        )
+        
+        # Set WAL mode for concurrent read access
+        with self.engine.connect() as conn:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.commit()
+            
         Base.metadata.create_all(self.engine)
         
         if self.was_rebuilt:

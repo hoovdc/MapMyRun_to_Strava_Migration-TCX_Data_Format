@@ -23,7 +23,8 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help="Simulate the upload process without making any actual API calls to Strava.")
     parser.add_argument('--dry-run-limit', type=int, default=20, help="Limit the number of activities simulated during dry-run (default: 20)")
     parser.add_argument('--csv-path', type=str, default='data/From_MapMyRun/CSV_for_event_ID_extraction/user16881_workout_history.csv', help='Path to the MapMyRun workout history CSV file.')
-    parser.add_argument('--skip-non-runs', action='store_true', default=True, help="Skip non-run activities during upload (default: True)")
+    parser.add_argument('--skip-non-runs', action='store_true', default=True, help="Skip non-run activities during upload (default: True - focus on runs first)")
+    parser.add_argument('--include-all-types', dest='skip_non_runs', action='store_false', help="Include all activity types during upload")
     parser.add_argument('--batch-size', type=int, help="Run in non-interactive mode with specified batch size (5, 10, 50, 100, 300)")
     args = parser.parse_args()
 
@@ -378,14 +379,39 @@ def print_final_status_summary(session):
     print(f"  Activities confirmed on Strava: {confirmed_on_strava} ({(confirmed_on_strava/total_workouts)*100:.1f}%)")
     print(f"  Activities remaining to process: {remaining_to_process} ({(remaining_to_process/total_workouts)*100:.1f}%)")
     
+    # RUN-SPECIFIC METRICS (Priority Focus)
+    run_workouts = [w for w in all_workouts if w.activity_type and 'run' in w.activity_type.lower()]
+    total_runs = len(run_workouts)
+    if total_runs > 0:
+        run_confirmed = len([w for w in run_workouts if w.strava_status in ['upload_successful', 'skipped_already_exists']])
+        run_pending = len([w for w in run_workouts if w.strava_status == 'pending_upload'])
+        run_failed = len([w for w in run_workouts if w.strava_status == 'upload_failed'])
+        
+        print()
+        print("RUN MIGRATION PROGRESS (Priority Focus):")
+        print(f"  Total Runs: {total_runs} ({(total_runs/total_workouts)*100:.1f}% of all activities)")
+        print(f"  Runs confirmed on Strava: {run_confirmed} ({(run_confirmed/total_runs)*100:.1f}%)")
+        print(f"  Runs pending upload: {run_pending}")
+        print(f"  Runs failed upload: {run_failed}")
+        
+        if run_confirmed / total_runs >= 0.95:
+            print("  SUCCESS: 95%+ of runs are confirmed on Strava!")
+        elif run_confirmed / total_runs >= 0.90:
+            print("  EXCELLENT: 90%+ of runs are confirmed on Strava!")
+        elif run_confirmed / total_runs >= 0.80:
+            print("  GOOD: 80%+ of runs are confirmed on Strava!")
+        else:
+            print(f"  IN PROGRESS: {int(0.95 * total_runs) - run_confirmed} more run confirmations needed for 95% target")
+    
+    # Overall progress
     if confirmed_on_strava / total_workouts >= 0.95:
-        print("  🎉 SUCCESS: 95%+ of activities are confirmed on Strava!")
+        print("  OVERALL SUCCESS: 95%+ of all activities are confirmed on Strava!")
     elif confirmed_on_strava / total_workouts >= 0.90:
-        print("  ✅ EXCELLENT: 90%+ of activities are confirmed on Strava!")
+        print("  OVERALL EXCELLENT: 90%+ of all activities are confirmed on Strava!")
     elif confirmed_on_strava / total_workouts >= 0.80:
-        print("  👍 GOOD: 80%+ of activities are confirmed on Strava!")
+        print("  OVERALL GOOD: 80%+ of all activities are confirmed on Strava!")
     else:
-        print(f"  ⚠️  IN PROGRESS: {int(0.95 * total_workouts) - confirmed_on_strava} more confirmations needed for 95% target")
+        print(f"  OVERALL IN PROGRESS: {int(0.95 * total_workouts) - confirmed_on_strava} more confirmations needed for 95% target")
     
     print("="*60)
 
