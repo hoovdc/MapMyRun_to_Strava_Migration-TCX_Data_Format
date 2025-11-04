@@ -3,12 +3,16 @@ import os
 import logging
 from sqlalchemy import func
 
+# pylint: disable=not-callable
+# SQLAlchemy func calls are dynamic and confuse static analyzers
+
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
 from src.database_manager import DatabaseManager, Workout
 from utils.logger import setup_logger
+from utils.date_range_analyzer import DateRangeAnalyzer
 
 def generate_status_report():
     """
@@ -62,9 +66,11 @@ def generate_status_report():
         print("-" * 38)
         print(f"{'Total Workouts':<25} | {total_strava_workouts:<10}\n")
         
+        # --- Date Range Analysis ---
+        DateRangeAnalyzer(session, Workout).generate_analysis()
 
     except Exception as e:
-        logger.error(f"An error occurred while generating the report: {e}")
+        logger.error("An error occurred while generating the report: %s", e)
     finally:
         session.close()
 
